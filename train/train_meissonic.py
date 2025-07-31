@@ -809,7 +809,10 @@ def main(args):
 
     # As stated above, we are not doing epoch based training here, but just using this for book keeping and being able to
     # reuse the same training loop with other datasets/loaders.
-    for epoch in range(first_epoch, num_train_epochs):
+    # for epoch in range(first_epoch, num_train_epochs):
+    idx = 0
+    token_output = 'token_output'
+    for epoch in range(0, 1):
         for batch in train_dataloader:
             torch.cuda.empty_cache()
             with torch.no_grad():
@@ -817,6 +820,7 @@ def main(args):
                 pixel_values = batch["image"].to(accelerator.device, non_blocking=True)
 
                 batch_size = pixel_values.shape[0]
+                # print(batch_size)
 
                 split_batch_size = args.split_vae_encode if args.split_vae_encode is not None else batch_size
                 num_splits = math.ceil(batch_size / split_batch_size)
@@ -832,234 +836,241 @@ def main(args):
                     )
                 image_tokens = torch.cat(image_tokens, dim=0)
 
-                batch_size, seq_len = image_tokens.shape
+                # print(image_tokens.shape)
+                os.makedirs(token_output, exist_ok=True)
 
-                timesteps = torch.rand(batch_size, device=image_tokens.device)
-                mask_prob = torch.cos(timesteps * math.pi * 0.5)
-                mask_prob = mask_prob.clip(args.min_masking_rate)
+                torch.save(image_tokens, f"{token_output}/{idx}.pt")
 
-                num_token_masked = (seq_len * mask_prob).round().clamp(min=1)
-                batch_randperm = torch.rand(batch_size, seq_len, device=image_tokens.device).argsort(dim=-1)
-                mask = batch_randperm < num_token_masked.unsqueeze(-1)
+                idx = idx + 1
 
-                mask_id = accelerator.unwrap_model(model).config.vocab_size - 1
-                input_ids = torch.where(mask, mask_id, image_tokens)
-                labels = torch.where(mask, image_tokens, -100)
+            #     batch_size, seq_len = image_tokens.shape
 
-                if "prompt_input_ids" in batch:
-                    with nullcontext() if args.train_text_encoder else torch.no_grad():
-                        if args.text_encoder_architecture == "CLIP_T5_base": # Not support yet. Only support open_clip
-                            batch["prompt_input_ids"][0] = batch["prompt_input_ids"][0].to(accelerator.device, non_blocking=True)
-                            batch["prompt_input_ids"][1] = batch["prompt_input_ids"][1].to(accelerator.device, non_blocking=True)
-                            encoder_hidden_states, cond_embeds = encode_prompt(
-                                text_encoder, batch["prompt_input_ids"], args.text_encoder_architecture
-                            )
-                        else:
-                            encoder_hidden_states, cond_embeds = encode_prompt(
-                                text_encoder, batch["prompt_input_ids"].to(accelerator.device, non_blocking=True), args.text_encoder_architecture
-                            )
+            #     timesteps = torch.rand(batch_size, device=image_tokens.device)
+            #     mask_prob = torch.cos(timesteps * math.pi * 0.5)
+            #     mask_prob = mask_prob.clip(args.min_masking_rate)
 
-                if args.cond_dropout_prob > 0.0:
-                    assert encoder_hidden_states is not None
+            #     num_token_masked = (seq_len * mask_prob).round().clamp(min=1)
+            #     batch_randperm = torch.rand(batch_size, seq_len, device=image_tokens.device).argsort(dim=-1)
+            #     mask = batch_randperm < num_token_masked.unsqueeze(-1)
 
-                    batch_size = encoder_hidden_states.shape[0]
+            #     mask_id = accelerator.unwrap_model(model).config.vocab_size - 1
+            #     input_ids = torch.where(mask, mask_id, image_tokens)
+            #     labels = torch.where(mask, image_tokens, -100)
 
-                    mask = (
-                        torch.zeros((batch_size, 1, 1), device=encoder_hidden_states.device).float().uniform_(0, 1)
-                        < args.cond_dropout_prob
-                    )
+            #     if "prompt_input_ids" in batch:
+            #         with nullcontext() if args.train_text_encoder else torch.no_grad():
+            #             if args.text_encoder_architecture == "CLIP_T5_base": # Not support yet. Only support open_clip
+            #                 batch["prompt_input_ids"][0] = batch["prompt_input_ids"][0].to(accelerator.device, non_blocking=True)
+            #                 batch["prompt_input_ids"][1] = batch["prompt_input_ids"][1].to(accelerator.device, non_blocking=True)
+            #                 encoder_hidden_states, cond_embeds = encode_prompt(
+            #                     text_encoder, batch["prompt_input_ids"], args.text_encoder_architecture
+            #                 )
+            #             else:
+            #                 encoder_hidden_states, cond_embeds = encode_prompt(
+            #                     text_encoder, batch["prompt_input_ids"].to(accelerator.device, non_blocking=True), args.text_encoder_architecture
+            #                 )
 
-                    empty_embeds_ = empty_embeds.expand(batch_size, -1, -1)
-                    encoder_hidden_states = torch.where(
-                        (encoder_hidden_states * mask).bool(), encoder_hidden_states, empty_embeds_
-                    )
+            #     if args.cond_dropout_prob > 0.0:
+            #         assert encoder_hidden_states is not None
 
-                    empty_clip_embeds_ = empty_clip_embeds.expand(batch_size, -1)
-                    cond_embeds = torch.where((cond_embeds * mask.squeeze(-1)).bool(), cond_embeds, empty_clip_embeds_)
+            #         batch_size = encoder_hidden_states.shape[0]
 
-                bs = input_ids.shape[0]
-                vae_scale_factor = 2 ** (len(vq_model.config.block_out_channels) - 1)
-                resolution = args.resolution // vae_scale_factor
-                input_ids = input_ids.reshape(bs, resolution, resolution)
+            #         mask = (
+            #             torch.zeros((batch_size, 1, 1), device=encoder_hidden_states.device).float().uniform_(0, 1)
+            #             < args.cond_dropout_prob
+            #         )
 
-            if "prompt_input_ids" in batch:
-                with nullcontext() if args.train_text_encoder else torch.no_grad():
-                    if args.text_encoder_architecture == "CLIP_T5_base": # Not support yet. Only support open_clip
-                        batch["prompt_input_ids"][0] = batch["prompt_input_ids"][0].to(accelerator.device, non_blocking=True)
-                        batch["prompt_input_ids"][1] = batch["prompt_input_ids"][1].to(accelerator.device, non_blocking=True)
-                        encoder_hidden_states, cond_embeds = encode_prompt(
-                            text_encoder, batch["prompt_input_ids"],args.text_encoder_architecture
-                        )
-                    else:
-                        encoder_hidden_states, cond_embeds = encode_prompt(
-                            text_encoder, batch["prompt_input_ids"].to(accelerator.device, non_blocking=True),args.text_encoder_architecture
-                        )
+            #         empty_embeds_ = empty_embeds.expand(batch_size, -1, -1)
+            #         encoder_hidden_states = torch.where(
+            #             (encoder_hidden_states * mask).bool(), encoder_hidden_states, empty_embeds_
+            #         )
 
-            # Train Step
-            with accelerator.accumulate(model):
-                codebook_size = accelerator.unwrap_model(model).config.codebook_size
+            #         empty_clip_embeds_ = empty_clip_embeds.expand(batch_size, -1)
+            #         cond_embeds = torch.where((cond_embeds * mask.squeeze(-1)).bool(), cond_embeds, empty_clip_embeds_)
 
-                if args.pretrained_model_architecture == 'Meissonic':
+            #     bs = input_ids.shape[0]
+            #     vae_scale_factor = 2 ** (len(vq_model.config.block_out_channels) - 1)
+            #     resolution = args.resolution // vae_scale_factor
+            #     input_ids = input_ids.reshape(bs, resolution, resolution)
+
+            # if "prompt_input_ids" in batch:
+            #     with nullcontext() if args.train_text_encoder else torch.no_grad():
+            #         if args.text_encoder_architecture == "CLIP_T5_base": # Not support yet. Only support open_clip
+            #             batch["prompt_input_ids"][0] = batch["prompt_input_ids"][0].to(accelerator.device, non_blocking=True)
+            #             batch["prompt_input_ids"][1] = batch["prompt_input_ids"][1].to(accelerator.device, non_blocking=True)
+            #             encoder_hidden_states, cond_embeds = encode_prompt(
+            #                 text_encoder, batch["prompt_input_ids"],args.text_encoder_architecture
+            #             )
+            #         else:
+            #             encoder_hidden_states, cond_embeds = encode_prompt(
+            #                 text_encoder, batch["prompt_input_ids"].to(accelerator.device, non_blocking=True),args.text_encoder_architecture
+            #             )
+
+        #     # Train Step
+        #     with accelerator.accumulate(model):
+        #         codebook_size = accelerator.unwrap_model(model).config.codebook_size
+
+        #         if args.pretrained_model_architecture == 'Meissonic':
                    
-                    if args.resolution == 1024: # only stage 3 and stage 4 do not apply 2*
-                        img_ids = _prepare_latent_image_ids(input_ids.shape[0], input_ids.shape[-2],input_ids.shape[-1],input_ids.device,input_ids.dtype)
-                    else:
-                        img_ids = _prepare_latent_image_ids(input_ids.shape[0],2*input_ids.shape[-2],2*input_ids.shape[-1],input_ids.device,input_ids.dtype)
+        #             if args.resolution == 1024: # only stage 3 and stage 4 do not apply 2*
+        #                 img_ids = _prepare_latent_image_ids(input_ids.shape[0], input_ids.shape[-2],input_ids.shape[-1],input_ids.device,input_ids.dtype)
+        #             else:
+        #                 img_ids = _prepare_latent_image_ids(input_ids.shape[0],2*input_ids.shape[-2],2*input_ids.shape[-1],input_ids.device,input_ids.dtype)
 
-                    txt_ids = torch.zeros(encoder_hidden_states.shape[1],3).to(device = input_ids.device, dtype = input_ids.dtype)
+        #             txt_ids = torch.zeros(encoder_hidden_states.shape[1],3).to(device = input_ids.device, dtype = input_ids.dtype)
                    
-                    logits = (
-                        model(
-                            hidden_states=input_ids, # should be (batch size, channel, height, width)
-                            encoder_hidden_states=encoder_hidden_states, # should be (batch size, sequence_len, embed_dims)
-                            micro_conds=micro_conds, # 
-                            pooled_projections=cond_embeds, # should be (batch_size, projection_dim)
-                            img_ids = img_ids,
-                            txt_ids = txt_ids,
-                            # timestep = timesteps * 20,
-                            timestep = mask_prob * 1000,
-                            # guidance = 9,
-                        )
-                        .reshape(bs, codebook_size, -1)
-                        .permute(0, 2, 1)
-                        .reshape(-1, codebook_size)
-                    )
-                else:
-                    raise ValueError(f"Unknown model architecture: {args.pretrained_model_architecture}")
+        #             logits = (
+        #                 model(
+        #                     hidden_states=input_ids, # should be (batch size, channel, height, width)
+        #                     encoder_hidden_states=encoder_hidden_states, # should be (batch size, sequence_len, embed_dims)
+        #                     micro_conds=micro_conds, # 
+        #                     pooled_projections=cond_embeds, # should be (batch_size, projection_dim)
+        #                     img_ids = img_ids,
+        #                     txt_ids = txt_ids,
+        #                     # timestep = timesteps * 20,
+        #                     timestep = mask_prob * 1000,
+        #                     # guidance = 9,
+        #                 )
+        #                 .reshape(bs, codebook_size, -1)
+        #                 .permute(0, 2, 1)
+        #                 .reshape(-1, codebook_size)
+        #             )
+        #         else:
+        #             raise ValueError(f"Unknown model architecture: {args.pretrained_model_architecture}")
 
-                loss = F.cross_entropy(
-                    logits,
-                    labels.view(-1),
-                    ignore_index=-100,
-                    reduction="mean",
-                )
+        #         loss = F.cross_entropy(
+        #             logits,
+        #             labels.view(-1),
+        #             ignore_index=-100,
+        #             reduction="mean",
+        #         )
 
-                # Gather the losses across all processes for logging (if we use distributed training).
-                avg_loss = accelerator.gather(loss.repeat(args.train_batch_size)).mean()
-                avg_masking_rate = accelerator.gather(mask_prob.repeat(args.train_batch_size)).mean()
+        #         # Gather the losses across all processes for logging (if we use distributed training).
+        #         avg_loss = accelerator.gather(loss.repeat(args.train_batch_size)).mean()
+        #         avg_masking_rate = accelerator.gather(mask_prob.repeat(args.train_batch_size)).mean()
 
-                accelerator.backward(loss)
+        #         accelerator.backward(loss)
 
-                if args.max_grad_norm is not None and accelerator.sync_gradients:
-                    accelerator.clip_grad_norm_(model.parameters(), args.max_grad_norm)
+        #         if args.max_grad_norm is not None and accelerator.sync_gradients:
+        #             accelerator.clip_grad_norm_(model.parameters(), args.max_grad_norm)
 
-                optimizer.step()
-                lr_scheduler.step()
+        #         optimizer.step()
+        #         lr_scheduler.step()
 
-                optimizer.zero_grad(set_to_none=True)
+        #         optimizer.zero_grad(set_to_none=True)
 
-            # Checks if the accelerator has performed an optimization step behind the scenes
-            if accelerator.sync_gradients:
-                if args.use_ema:
-                    ema.step(model.parameters())
+        #     # Checks if the accelerator has performed an optimization step behind the scenes
+        #     if accelerator.sync_gradients:
+        #         if args.use_ema:
+        #             ema.step(model.parameters())
 
-                if (global_step + 1) % args.logging_steps == 0:
-                    logs = {
-                        "step_loss": avg_loss.item(),
-                        "lr": lr_scheduler.get_last_lr()[0],
-                        "avg_masking_rate": avg_masking_rate.item(),
-                    }
-                    accelerator.log(logs, step=global_step + 1)
+        #         if (global_step + 1) % args.logging_steps == 0:
+        #             logs = {
+        #                 "step_loss": avg_loss.item(),
+        #                 "lr": lr_scheduler.get_last_lr()[0],
+        #                 "avg_masking_rate": avg_masking_rate.item(),
+        #             }
+        #             accelerator.log(logs, step=global_step + 1)
 
-                    logger.info(
-                        f"Step: {global_step + 1} "
-                        f"Loss: {avg_loss.item():0.4f} "
-                        f"LR: {lr_scheduler.get_last_lr()[0]:0.6f}"
-                    )
+        #             logger.info(
+        #                 f"Step: {global_step + 1} "
+        #                 f"Loss: {avg_loss.item():0.4f} "
+        #                 f"LR: {lr_scheduler.get_last_lr()[0]:0.6f}"
+        #             )
 
-                if (global_step + 1) % args.checkpointing_steps == 0:
-                    save_checkpoint(args, accelerator, global_step + 1, logger)
+        #         if (global_step + 1) % args.checkpointing_steps == 0:
+        #             save_checkpoint(args, accelerator, global_step + 1, logger)
 
-                if (global_step + 1) % args.validation_steps == 0 and accelerator.is_main_process:
-                    if args.use_ema:
-                        ema.store(model.parameters())
-                        ema.copy_to(model.parameters())
+        #         if (global_step + 1) % args.validation_steps == 0 and accelerator.is_main_process:
+        #             if args.use_ema:
+        #                 ema.store(model.parameters())
+        #                 ema.copy_to(model.parameters())
 
-                    with torch.no_grad():
-                        logger.info("Generating images...")
+        #             with torch.no_grad():
+        #                 logger.info("Generating images...")
 
-                        model.eval()
+        #                 model.eval()
 
-                        if args.train_text_encoder:
-                            text_encoder.eval()
+        #                 if args.train_text_encoder:
+        #                     text_encoder.eval()
 
-                        scheduler = Scheduler.from_pretrained(
-                            args.pretrained_model_name_or_path,
-                            subfolder="scheduler",
-                            revision=args.revision,
-                            variant=args.variant,
-                            )
-                        if args.text_encoder_architecture == "CLIP" or args.text_encoder_architecture == "open_clip":
-                            pipe = Pipeline(
-                                transformer=accelerator.unwrap_model(model),
-                                tokenizer=tokenizer,
-                                text_encoder=text_encoder,
-                                vqvae=vq_model,
-                                scheduler=scheduler,
-                            )
-                        else:
-                            pipe = Pipeline(
-                                transformer=accelerator.unwrap_model(model),
-                                tokenizer=tokenizer[0],
-                                text_encoder=text_encoder[0],
-                                vqvae=vq_model,
-                                scheduler=scheduler,
-                                text_encoder_t5=text_encoder[1],
-                                tokenizer_t5=tokenizer[1]
-                            )
+        #                 scheduler = Scheduler.from_pretrained(
+        #                     args.pretrained_model_name_or_path,
+        #                     subfolder="scheduler",
+        #                     revision=args.revision,
+        #                     variant=args.variant,
+        #                     )
+        #                 if args.text_encoder_architecture == "CLIP" or args.text_encoder_architecture == "open_clip":
+        #                     pipe = Pipeline(
+        #                         transformer=accelerator.unwrap_model(model),
+        #                         tokenizer=tokenizer,
+        #                         text_encoder=text_encoder,
+        #                         vqvae=vq_model,
+        #                         scheduler=scheduler,
+        #                     )
+        #                 else:
+        #                     pipe = Pipeline(
+        #                         transformer=accelerator.unwrap_model(model),
+        #                         tokenizer=tokenizer[0],
+        #                         text_encoder=text_encoder[0],
+        #                         vqvae=vq_model,
+        #                         scheduler=scheduler,
+        #                         text_encoder_t5=text_encoder[1],
+        #                         tokenizer_t5=tokenizer[1]
+        #                     )
 
                       
                             
 
 
-                        pil_images = pipe(prompt=args.validation_prompts,height=args.resolution,width=args.resolution,guidance_scale=9,num_inference_steps=64).images
-                        wandb_images = [
-                            wandb.Image(image, caption=args.validation_prompts[i])
-                            for i, image in enumerate(pil_images)
-                        ]
+        #                 pil_images = pipe(prompt=args.validation_prompts,height=args.resolution,width=args.resolution,guidance_scale=9,num_inference_steps=64).images
+        #                 wandb_images = [
+        #                     wandb.Image(image, caption=args.validation_prompts[i])
+        #                     for i, image in enumerate(pil_images)
+        #                 ]
 
-                        wandb.log({"generated_images": wandb_images}, step=global_step + 1)
+        #                 wandb.log({"generated_images": wandb_images}, step=global_step + 1)
 
-                        result=[]
-                        for img in pil_images:
-                            if not isinstance(img, torch.Tensor):
-                                img = transforms.ToTensor()(img)
-                            result.append(img.unsqueeze(0))
-                        result = torch.cat(result,dim=0)
-                        result = make_grid(result, nrow=3)
-                        save_image(result,os.path.join(args.output_dir,str(global_step)+'_text2image_1024_CFG-9.png'))
+        #                 result=[]
+        #                 for img in pil_images:
+        #                     if not isinstance(img, torch.Tensor):
+        #                         img = transforms.ToTensor()(img)
+        #                     result.append(img.unsqueeze(0))
+        #                 result = torch.cat(result,dim=0)
+        #                 result = make_grid(result, nrow=3)
+        #                 save_image(result,os.path.join(args.output_dir,str(global_step)+'_text2image_1024_CFG-9.png'))
 
                         
-                        # pil_images = pipe(prompt=args.validation_prompts,height=args.resolution,width=args.resolution,guidance_scale=9).images
-                        # result=[]
-                        # for img in pil_images:
-                        #     if not isinstance(img, torch.Tensor):
-                        #         img = transforms.ToTensor()(img)
-                        #     result.append(img.unsqueeze(0))
-                        # result = torch.cat(result,dim=0)
-                        # result = make_grid(result, nrow=3)
-                        # save_image(result,os.path.join(args.output_dir,str(global_step)+'_text2image_1024_CFG-9.png'))
+        #                 # pil_images = pipe(prompt=args.validation_prompts,height=args.resolution,width=args.resolution,guidance_scale=9).images
+        #                 # result=[]
+        #                 # for img in pil_images:
+        #                 #     if not isinstance(img, torch.Tensor):
+        #                 #         img = transforms.ToTensor()(img)
+        #                 #     result.append(img.unsqueeze(0))
+        #                 # result = torch.cat(result,dim=0)
+        #                 # result = make_grid(result, nrow=3)
+        #                 # save_image(result,os.path.join(args.output_dir,str(global_step)+'_text2image_1024_CFG-9.png'))
 
 
 
-                        model.train()
+        #                 model.train()
 
-                        if args.train_text_encoder:
-                            if args.text_encoder_architecture == "CLIP_T5_base": # Not support yet. Only support open_clip
-                                text_encoder[0].train()
-                                text_encoder[1].trian()
-                            else:
-                                text_encoder.train()
+        #                 if args.train_text_encoder:
+        #                     if args.text_encoder_architecture == "CLIP_T5_base": # Not support yet. Only support open_clip
+        #                         text_encoder[0].train()
+        #                         text_encoder[1].trian()
+        #                     else:
+        #                         text_encoder.train()
 
-                    if args.use_ema:
-                        ema.restore(model.parameters())
+        #             if args.use_ema:
+        #                 ema.restore(model.parameters())
 
-                global_step += 1
+        #         global_step += 1
 
-            # Stop training if max steps is reached
-            if global_step >= args.max_train_steps:
-                break
-        # End for
+        #     # Stop training if max steps is reached
+        #     if global_step >= args.max_train_steps:
+        #         break
+        # # End for
 
     accelerator.wait_for_everyone()
 

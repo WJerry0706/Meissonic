@@ -1,5 +1,4 @@
-# bash it in root path
-PYTHON_PATH='./' accelerate launch --multi_gpu --gpu_ids '0,1,2,3' --main_process_port 25011 --num_processes 4 train/train_meissonic.py \
+PYTHON_PATH='./' accelerate launch --num_processes 1 --gpu_ids '0' --main_process_port 25011 train/train_meissonic.py \
         --output_dir  "../CKPT_OUTPUT_PATH" \
         --train_batch_size 4 \
         --gradient_accumulation_steps 2 \
@@ -9,8 +8,8 @@ PYTHON_PATH='./' accelerate launch --multi_gpu --gpu_ids '0,1,2,3' --main_proces
         --text_encoder_architecture 'open_clip' \
         --pretrained_model_architecture 'Meissonic' \
         --training_from_scratch True \
-        --instance_dataset 'DATA_TYPE' \
-        --instance_data_dir  '../parquets_father_dir/' \
+        --instance_dataset 'HuggingFaceDataset' \
+        --instance_data_dir  'parquets_father_dir/' \
         --resolution 1024 \
         --mixed_precision fp16 \
         --lr_scheduler constant \
@@ -29,5 +28,5 @@ PYTHON_PATH='./' accelerate launch --multi_gpu --gpu_ids '0,1,2,3' --main_proces
         --max_train_steps 100000 \
         --checkpointing_steps 1000 \
         --validation_steps 200 \
-        --report_to 'wandb' \
+        # --report_to 'wandb' \
         --logging_steps 10
