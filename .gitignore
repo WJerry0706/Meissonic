@@ -167,3 +167,9 @@ cython_debug/
 /parquets_father_dir
 /token_output
 /wandb
+/ImageNet-Parquet/ImageNet-Parquet
+/output
+/My-Image-Parquet-Dataset
+/output_images
+/token_imagenet
+/token_meissonic

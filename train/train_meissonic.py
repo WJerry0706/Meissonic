@@ -811,13 +811,15 @@ def main(args):
     # reuse the same training loop with other datasets/loaders.
     # for epoch in range(first_epoch, num_train_epochs):
     idx = 0
-    token_output = 'token_output'
+    token_output = 'token_inf'
     for epoch in range(0, 1):
         for batch in train_dataloader:
             torch.cuda.empty_cache()
             with torch.no_grad():
                 micro_conds = batch["micro_conds"].to(accelerator.device, non_blocking=True)
                 pixel_values = batch["image"].to(accelerator.device, non_blocking=True)
+                # print(pixel_values.shape)
+                #[4,3,1024,1024][b,c,h,w]
 
                 batch_size = pixel_values.shape[0]
                 # print(batch_size)
@@ -829,12 +831,18 @@ def main(args):
                     start_idx = i * split_batch_size
                     end_idx = min((i + 1) * split_batch_size, batch_size)
                     bs = pixel_values.shape[0]
+                    # print(vq_model.encode(pixel_values[start_idx:end_idx]).latents.shape)
+                    # [4,64,64,64][batchsize,F,H,W]
+                    # print(vq_model.quantize(vq_model.encode(pixel_values[start_idx:end_idx]).latents)[2][2].shape)
+                    # [16384] 4*tokens
                     image_tokens.append(
                         vq_model.quantize(vq_model.encode(pixel_values[start_idx:end_idx]).latents)[2][2].reshape(
                             split_batch_size, -1
                         )
                     )
                 image_tokens = torch.cat(image_tokens, dim=0)
+
+                # print(image_tokens.shape)
 
                 # print(image_tokens.shape)
                 os.makedirs(token_output, exist_ok=True)

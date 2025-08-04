@@ -8,8 +8,8 @@ PYTHON_PATH='./' accelerate launch --num_processes 1 --gpu_ids '0' --main_proces
         --text_encoder_architecture 'open_clip' \
         --pretrained_model_architecture 'Meissonic' \
         --training_from_scratch True \
-        --instance_dataset 'HuggingFaceDataset' \
-        --instance_data_dir  'parquets_father_dir/' \
+        --instance_dataset 'MyParquetDataset' \
+        --instance_data_dir  'My-Image-Parquet-Dataset' \
         --resolution 1024 \
         --mixed_precision fp16 \
         --lr_scheduler constant \

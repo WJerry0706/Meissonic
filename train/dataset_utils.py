@@ -103,14 +103,14 @@ class MyParquetDataset(Dataset):
         random.seed(23)
 
         self.root_dir = root_dir
-        self.dataset_receipt = {'MSCOCO_part1': {'total_num': 6212, 'ratio':1}, 'MSCOCO_part2': {'total_num': 6212, 'ratio':1}}
+        self.dataset_receipt = {'ImageNet-Parquet': {'total_num': 24, 'ratio': 1.0}}
 
         self.tokenizer = tokenizer
         self.size = size
         self.text_encoder_architecture = text_encoder_architecture
         self.norm = norm
 
-        self.hdfs = fs.HadoopFileSystem(host="", port=0000) # TODO: change to your own HDFS host and port
+        self.hdfs = fs.LocalFileSystem() # TODO: change to your own HDFS host and port
         self._init_mixed_parquet_dir_list()
 
         self.file_metadata = []

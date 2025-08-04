@@ -1,7 +1,4 @@
 import os
-import sys
-sys.path.append("./")
-
 import torch
 from torchvision import transforms
 from src.transformer import Transformer2DModel
@@ -15,51 +12,51 @@ from diffusers import VQModel
 
 device = 'cuda'
 
+# Load models as before
 model_path = "MeissonFlow/Meissonic"
-model = Transformer2DModel.from_pretrained(model_path,subfolder="transformer",)
-vq_model = VQModel.from_pretrained(model_path, subfolder="vqvae", )
-# text_encoder = CLIPTextModelWithProjection.from_pretrained(model_path,subfolder="text_encoder",)
-text_encoder = CLIPTextModelWithProjection.from_pretrained(   #using original text enc for stable sampling
-            "laion/CLIP-ViT-H-14-laion2B-s32B-b79K"
-        )
-tokenizer = CLIPTokenizer.from_pretrained(model_path,subfolder="tokenizer",)
-scheduler = Scheduler.from_pretrained(model_path,subfolder="scheduler",)
-pipe=Pipeline(vq_model, tokenizer=tokenizer,text_encoder=text_encoder,transformer=model,scheduler=scheduler)
-
+model = Transformer2DModel.from_pretrained(model_path, subfolder="transformer")
+vq_model = VQModel.from_pretrained(model_path, subfolder="vqvae")
+text_encoder = CLIPTextModelWithProjection.from_pretrained(
+    "laion/CLIP-ViT-H-14-laion2B-s32B-b79K"
+)
+tokenizer = CLIPTokenizer.from_pretrained(model_path, subfolder="tokenizer")
+scheduler = Scheduler.from_pretrained(model_path, subfolder="scheduler")
+pipe = Pipeline(vq_model, tokenizer=tokenizer, text_encoder=text_encoder, transformer=model, scheduler=scheduler)
 pipe = pipe.to(device)
 
+# Parameters
 steps = 64
 CFG = 9
-resolution = 1024 
+resolution = 1024
 negative_prompt = "worst quality, low quality, low res, blurry, distortion, watermark, logo, signature, text, jpeg artifacts, signature, sketch, duplicate, ugly, identifying mark"
+batch_size = 2
 
-prompts = [
-    "Two actors are posing for a pictur with one wearing a black and white face paint.",
-    "A large body of water with a rock in the middle and mountains in the background.",
-    "A white and blue coffee mug with a picture of a man on it.",
-    "A statue of a man with a crown on his head.",
-    "A man in a yellow wet suit is holding a big black dog in the water.",
-    "A white table with a vase of flowers and a cup of coffee on top of it.",
-    "A woman stands on a dock in the fog.",
-    "A woman is standing next to a picture of another woman."
-]
-
-batched_generation = False
-num_images = len(prompts) if batched_generation else 1
-
-images = pipe(
-    prompt=prompts[:num_images], 
-    negative_prompt=[negative_prompt] * num_images,
-    height=resolution,
-    width=resolution,
-    guidance_scale=CFG,
-    num_inference_steps=steps
-    ).images
+# Read prompts from file
+prompt_file = "coco_cleaned.txt"
+with open(prompt_file, "r", encoding="utf-8") as f:
+    all_prompts = [line.strip() for line in f if line.strip()]
 
 output_dir = "./output"
 os.makedirs(output_dir, exist_ok=True)
-for i, prompt in enumerate(prompts[:num_images]):
-    sanitized_prompt = prompt.replace(" ", "_")
-    file_path = os.path.join(output_dir, f"{sanitized_prompt}_{resolution}_{steps}_{CFG}.png")
-    images[i].save(file_path)
-    print(f"The {i+1}/{num_images} image is saved to {file_path}")
+
+# Process prompts in batches
+for batch_start in range(0, len(all_prompts), batch_size):
+    batch_prompts = all_prompts[batch_start: batch_start + batch_size]
+    batch_size_actual = len(batch_prompts)
+
+    images = pipe(
+        prompt=batch_prompts,
+        negative_prompt=[negative_prompt] * batch_size_actual,
+        height=resolution,
+        width=resolution,
+        guidance_scale=CFG,
+        num_inference_steps=steps
+    ).images
+
+    for i, img in enumerate(images):
+        prompt = batch_prompts[i]
+        sanitized_prompt = prompt.replace(" ", "_").replace("/", "_")
+        file_name = f"{batch_start + i + 1}_{sanitized_prompt}_{resolution}_{steps}_{CFG}.png"
+        file_path = os.path.join(output_dir, file_name)
+        img.save(file_path)
+        print(f"Saved image {batch_start + i + 1}/{len(all_prompts)}: {file_path}")
