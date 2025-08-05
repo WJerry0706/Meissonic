@@ -103,7 +103,7 @@ class MyParquetDataset(Dataset):
         random.seed(23)
 
         self.root_dir = root_dir
-        self.dataset_receipt = {'ImageNet-Parquet': {'total_num': 24, 'ratio': 1.0}}
+        self.dataset_receipt = {'ImageNet-Parquet': {'total_num': 187, 'ratio': 1.0}}
 
         self.tokenizer = tokenizer
         self.size = size

@@ -21,7 +21,7 @@ SOURCE_IMAGE_DIR = "output"
 OUTPUT_PARQUET_DIR = "My-Image-Parquet-Dataset"
 
 # 3. Define the number of images to include in each Parquet file (batch).
-BATCH_SIZE = 256
+BATCH_SIZE = 512
 
 # 4. Specify the image formats you want to include.
 IMAGE_FORMATS = ['.jpg', '.jpeg', '.png', '.bmp']
